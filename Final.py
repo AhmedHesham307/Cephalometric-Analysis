@@ -43,9 +43,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.openFile.clicked.connect(lambda: self.read_data())
         
+        # Global variables
         self.temp_size = 35
         self.window_size = 50
         self.land = 12
+        self.search_window = []
+        self.position = []
+        
         self.graph = pg.PlotItem()
         self.graph.hideAxis('left')
         self.graph.hideAxis('bottom')
@@ -83,10 +87,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.images_templates_moments = pickle.load(f)
         
         self.get_similar_shapes()
-        self.rashidy()
-        # self.get_center_points()
-        # self.template_matching3()
-        # self.display()
+        self.template_matching()
+        self.display()
 
 
     def get_translation(self,shape):
@@ -120,8 +122,8 @@ class MainWindow(QtWidgets.QMainWindow):
             as second column
         '''
         mean_x, mean_y = self.get_translation(shape)
-        # shape[::2] -= mean_x
-        # shape[1::2] -= mean_y
+        shape[::2] -= mean_x
+        shape[1::2] -= mean_y
 
     def get_rotation_scale(self,reference_shape, shape):
         '''
@@ -209,6 +211,7 @@ class MainWindow(QtWidgets.QMainWindow):
         temp_ref = np.copy(reference_shape)
         temp_sh = np.copy(shape)
 
+        
         self.translate(temp_ref)
         self.translate(temp_sh)
 
@@ -265,7 +268,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
             #superimpose all shapes to current mean
             for sh in range(1, num_shapes):
+                mean_x = np.mean(shapes[sh][::2]).astype(int)
+                mean_y = np.mean(shapes[sh][1::2]).astype(int)
+
                 new_sh = self.procrustes_analysis(mean_shape, shapes[sh])
+                
+                new_sh[::2] += mean_x
+                new_sh[1::2] += mean_y
                 new_shapes[sh] = new_sh
 
             #calculate new mean
@@ -278,7 +287,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 break
 
             #align the new_mean to old mean
+            mean_x = np.mean(mean_shape[::2]).astype(int)
+            mean_y = np.mean(mean_shape[1::2]).astype(int)
             new_mean = self.procrustes_analysis(mean_shape, new_mean)
+            new_mean[::2] += mean_x
+            new_mean[1::2] += mean_y
             #update mean and distance
             mean_shape = new_mean
             current_distance = new_distance
@@ -321,225 +334,54 @@ class MainWindow(QtWidgets.QMainWindow):
         self.center_points = np.asarray(self.center_points)
         
         
-    def rashidy(self):
+    def template_matching(self):
         shapes = np.zeros(shape=(2400,1935))
+        shape = np.reshape(self.mean_similar_shape, (-1, 2)).astype(int)
         for i in self.names:
-            image = cv.imread(str('cepha400/'+i), cv.IMREAD_GRAYSCALE)
+            image = cv.imread(str('../cepha400/cepha400/'+i), cv.IMREAD_GRAYSCALE)
             shapes += cv.equalizeHist(image)    
         avg_shape = shapes/ 8.0
-        temp_land_1 = avg_shape[1040-self.temp_size :1040+self.temp_size ,806-self.temp_size:806+self.temp_size]
-        temp_land_2 = avg_shape[970 -self.temp_size:970+self.temp_size ,1389-self.temp_size:1389+self.temp_size ]
-        temp_land_3 = avg_shape[1225 - self.temp_size: 1225 +
-                                self.temp_size, 1265-self.temp_size:1265+self.temp_size]
-        temp_land_4 = avg_shape[1222-self.temp_size :1222+self.temp_size ,605-self.temp_size:605+self.temp_size ]
-        temp_land_5 = avg_shape[1525-self.temp_size:1525+self.temp_size, 1388-self.temp_size:1388+self.temp_size]
-        temp_land_6 = avg_shape[1839-self.temp_size : 1839+self.temp_size ,1363-self.temp_size:1363+self.temp_size ]
-        temp_land_7 = avg_shape[1930-self.temp_size:1930+self.temp_size , 1351-self.temp_size:1351+self.temp_size]  
-        temp_land_8 = avg_shape[2040-self.temp_size:2040+self.temp_size, 1245:1345]
-        temp_land_9 = avg_shape[2020-self.temp_size: 2020+self.temp_size, 1333-self.temp_size:1333+self.temp_size]
-        temp_land_10 = avg_shape[1744-self.temp_size:1744+self.temp_size, 746-self.temp_size:746+self.temp_size]
-        temp_land_11 = avg_shape[1691-self.temp_size:1691+self.temp_size, 1420-self.temp_size:1420+self.temp_size]
-        temp_land_12 = avg_shape[1700-self.temp_size: 1700+self.temp_size, 1436-self.temp_size:1436+self.temp_size]
-        temp_land_13 = avg_shape[1620-self.temp_size: 1620+self.temp_size, 1557-self.temp_size:1557+self.temp_size]
-        temp_land_14 = avg_shape[1803-self.temp_size:1803+self.temp_size, 1535-self.temp_size:1536+self.temp_size]
-        temp_land_15 = avg_shape[1496-self.temp_size: 1496+self.temp_size, 1495-self.temp_size:1495+self.temp_size]
-        temp_land_16 = avg_shape[2053-self.temp_size:2053+self.temp_size, 1426-self.temp_size:1426+self.temp_size] 
-        temp_land_17 = avg_shape[1429-self.temp_size:1429+self.temp_size, 968-self.temp_size:968+self.temp_size]
-        temp_land_18 = avg_shape[1444-self.temp_size: 1444+self.temp_size, 1397-self.temp_size:1397+self.temp_size]
-        temp_land_19 = avg_shape[1328-self.temp_size: 1328+self.temp_size, 669-self.temp_size:669+self.temp_size]
         
-        temp_lands = [temp_land_1, temp_land_2, temp_land_3, temp_land_4, temp_land_5, temp_land_6, temp_land_7, temp_land_8, temp_land_9,
-                      temp_land_10, temp_land_11, temp_land_12, temp_land_13, temp_land_14, temp_land_15, temp_land_16, temp_land_17, temp_land_18, temp_land_19]
-        
-        
-        shape = np.reshape(self.mean_similar_shape, (-1, 2)).astype(int)
         eq_test_img = cv.equalizeHist(self.test_img)
         for i in range(19):
-            # if i == 2 or i== 4 or i == 7 or i==8  or i==10 or i==13 or i==15:
-            #     continue
+            temp_land = avg_shape[shape[i][1]-self.temp_size: shape[i][1]+self.temp_size, shape[i][0]-self.temp_size:shape[i][0]+self.temp_size]
+            
             window = eq_test_img[shape[i][1]-self.window_size:shape[i][1]+self.window_size, shape[i][0] -
                                 self.window_size:shape[i][0]+self.window_size]
-            # result = signal.correlate2d(
-            #     window, temp_lands[i], boundary='symm', mode='same')
             
-            # x, y = np.unravel_index(np.argmax(result), result.shape)
             res = cv.matchTemplate(
-                window, temp_lands[i].astype(np.uint8), cv.TM_CCORR_NORMED)
-            min_val, max_val, min_loc, max_loc = cv.minMaxLoc(res)
+                window, temp_land.astype(np.uint8), cv.TM_CCORR_NORMED)
+            _, _, _, max_loc = cv.minMaxLoc(res)
 
             pos = [max_loc[0]+shape[i][0]-self.window_size+self.temp_size,
                    max_loc[1]+shape[i][1]-self.window_size+self.temp_size]
-            
+            self.position.append(pos)
             rect = patches.Rectangle(
                 (shape[i][0]-self.window_size, shape[i][1]-self.window_size), self.window_size*2, self.window_size*2, linewidth=1, edgecolor='r', facecolor='none')
-            self.originalCanvas.axes.add_patch(rect)
-            self.originalCanvas.axes.scatter(pos[0],
-                                             pos[1], marker='*', color="red", s=30)
-            self.originalCanvas.axes.imshow(self.test_img, cmap="gray")
-
-            mean_similar_shape = np.reshape(self.mean_similar_shape, (-1, 2))
-            self.originalCanvas.axes.scatter(mean_similar_shape[i, 0],
-                                          mean_similar_shape[i, 1], marker='*' , color='blue', s=30)
-            self.originalCanvas.draw()
-
-        self.imageView.setCentralItem(self.graph)
-        self.imageView.setLayout(self.originalLayout)
-    
+            self.search_window.append(rect)
+            
     def display(self):
-        # self.originalCanvas.axes.clear()
-        self.originalCanvas.axes.imshow(self.test_img,cmap="gray")
-        
+        for i in range(19):
+            self.originalCanvas.axes.add_patch(self.search_window[i])
+            self.originalCanvas.axes.scatter(self.position[i][0],
+                                         self.position[i][1], marker='*', color="red", s=30)
+        self.originalCanvas.axes.imshow(self.test_img, cmap="gray")
+
+        # test_shape = np.array(self.test_data.iloc[1, 1:])
+        # test_shape = np.reshape(test_shape, (-1, 2))
+        # self.originalCanvas.axes.scatter(test_shape[:, 0],
+        #                                  test_shape[:, 1], marker="*", color="green", s=30)
+
         mean_similar_shape = np.reshape(self.mean_similar_shape, (-1, 2))
-        self.originalCanvas.axes.scatter(mean_similar_shape[14:18, 0],
-                                         mean_similar_shape[14:18, 1], marker=".", color="red", s=50)
-        
-        self.originalCanvas.axes.scatter(self.land_locs[:, 0],
-                                         self.land_locs[:, 1], marker=".", color="green", s=50)
-        
-        
-        test_shape = np.array(self.test_data.iloc[2, 1:])
-        test_shape = np.reshape(test_shape, (-1, 2))
-        self.originalCanvas.axes.scatter(test_shape[14:18, 0],
-                                         test_shape[14:18, 1], marker=".", color="blue", s=50)
+        self.originalCanvas.axes.scatter(mean_similar_shape[:, 0],
+                                         mean_similar_shape[:, 1], marker='*', color='blue', s=30)
         self.originalCanvas.draw()
-      
+
         self.imageView.setCentralItem(self.graph)
         self.imageView.setLayout(self.originalLayout)
-                # this is the initial approximation of the landmarks
+
     
-    def delete(self,idx,t, t_z, x):
-        
-        if ((x) >= 0):
-            n = np.int32(idx[0][x])
-
-            t = np.delete(t, [z for z in range(((n)*1600), ((n)*1600)+1600)])
-            t = np.reshape(t, (-1, 40, 40))
-
-            t_z = np.delete(t_z, [z for z in range((n)*25, ((n)*25)+25)])
-            t_z = np.reshape(t_z, (-1, 25))
-
-            for s in range(len(idx[0])):
-                idx[0][s] = idx[0][s]-1 if idx[0][s] > n else idx[0][s]
-
-            return self.delete(idx,t, t_z, (x-1))
-        else:
-            return t, t_z
-        
-    def choose_temp(self):
-        final = []
-                
-        for i in range(len(self.images_templates[0])):
-            temps = [row[i] for row in self.images_templates].copy()
-            T_z = [row[i] for row in self.images_templates_moments].copy()
-            T = []
-            for a in range(1, 5):
-                T.append(temps[0])
-                dif = []
-                idx = []
-                for j in range(len(temps)):
-                    dif.append(np.abs(np.linalg.norm(T_z[0] - T_z[j])))
-                idx.append(np.argsort(dif)[0:int(np.ceil(0.3*len(temps)))])
-                temps, T_z = self.delete(idx,temps, T_z, (int(np.ceil(0.3*len(temps)))-1))
-            final.append(T)
-        self.temps = final
-
-    def template_matching(self):
-        self.choose_temp()
-        # self.temps = np.zeros((19,4,40,40))
-        land_locs = []
-        for land in range(3):
-            centers = self.center_points[:,land].astype(int)
-            max_position = []
-            val = 0
-            for center in range(0,8,2):
-                window = self.test_img[centers[center+1] -
-                                       self.window_size:centers[center+1]+self.window_size, centers[center] -
-                                       self.window_size:centers[center]+self.window_size]
-                for temp in range(4):
-                    res = cv.matchTemplate(
-                        window, self.temps[land][temp], cv.TM_CCORR_NORMED)
-                    min_val, max_val, min_loc, max_loc = cv.minMaxLoc(res)
-                    if max_val > val:
-                        val = max_val
-                        max_position = max_loc
-                        max_position = [max_position[0]+centers[center]-self.window_size+20,
-                                       max_position[1]+centers[center+1]-self.window_size+20]
-            land_locs.append(max_position)
-        self.land_locs = np.reshape(land_locs, (-1, 2))
-        
-        self.display()
-         
-    def template_matching2(self):
-        self.choose_temp()
-        # self.temps = np.zeros((19,4,40,40))
-        land_locs = []
-        for land in range(3):
-            centers = self.center_points[:, land].astype(int)
-            max_position = []
-            val = 0
-            for center in range(0, 8, 2):
-                window = self.test_img[centers[center+1] -
-                                        self.window_size:centers[center+1]+self.window_size, centers[center] -
-                                        self.window_size:centers[center]+self.window_size]
-                rect = patches.Rectangle(
-                    (centers[center]-self.window_size, centers[center+1]-self.window_size), self.window_size*2, self.window_size*2, linewidth=1, edgecolor='r', facecolor='none')
-                self.originalCanvas.axes.add_patch(rect)
-                self.originalCanvas.draw()
-                for temp in range(4):
-                    res = cv.matchTemplate(
-                        window, self.temps[land][temp], cv.TM_CCORR)
-                    min_val, max_val, min_loc, max_loc = cv.minMaxLoc(res)
-                    if max_val > val:
-                        val = max_val
-                        # print("val = " ,val)
-                        max_position = max_loc
-                        
-                        max_position = [max_position[0]+centers[center]-self.window_size+20,
-                                        max_position[1]+centers[center+1]-self.window_size+20]
-                    # print("pos = ", max_position)
-                    self.originalCanvas.axes.scatter(max_position[0],
-                                                        max_position[1], marker=".", color="yellow", s=100)
-                    self.originalCanvas.draw()
-
-            land_locs.append(max_position)
-        self.land_locs = np.reshape(land_locs, (-1, 2))
-
-        self.display()
-                        
-    def template_matching3(self):
-        self.choose_temp()
-        # self.temps = np.zeros((19,4,40,40))
-        land_locs = []
-        for land in range(14, 18):
-            centers = self.center_points[:, land].astype(int)
-            max_position = []
-            val = 0
-            shape = np.reshape(self.mean_similar_shape,(-1,2)).astype(int)
-            window = self.test_img[shape[land][1]-self.window_size:shape[land][1]+self.window_size, shape[land][0] -
-                                   self.window_size:shape[land][0]+self.window_size]
-            rect = patches.Rectangle(
-                (shape[land][0]-self.window_size, shape[land][1]-self.window_size), self.window_size*2, self.window_size*2, linewidth=1, edgecolor='r', facecolor='none')
-            self.originalCanvas.axes.add_patch(rect)
-            self.originalCanvas.draw()
-            for temp in range(4):
-                res = cv.matchTemplate(
-                    window, self.temps[land][temp], cv.TM_CCORR_NORMED)
-                min_val, max_val, min_loc, max_loc = cv.minMaxLoc(res)
-                if max_val > val:
-                    val = max_val
-                    # print("val = " ,val)
-                    max_position = max_loc
-                    
-                    max_position = [max_position[0]+shape[land][0]-self.window_size+20,
-                                    max_position[1]+shape[land][1]-self.window_size+20]
-                # print("pos = ", max_position)
-                self.originalCanvas.axes.scatter(max_position[0],
-                                                    max_position[1], marker=".", color="yellow", s=100)
-                self.originalCanvas.draw()
-            land_locs.append(max_position)
-        self.land_locs = np.reshape(land_locs, (-1, 2))
-
-        self.display()
+   
         
 def main():
     app = QtWidgets.QApplication(sys.argv)
