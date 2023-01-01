@@ -22,15 +22,27 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtWidgets import QFileDialog, QGraphicsScene
+import ntpath
 
 
+offset_points=[]
 class MplCanvas(FigureCanvasQTAgg):
 
-    def __init__(self, parent=None, width=5, height=4, dpi=100):
+    def __init__(self, allowdrawpoints, parent=None, width=5, height=4, dpi=100):
 
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = self.fig.add_subplot(111)
         super(MplCanvas, self).__init__(self.fig)
+
+        if(allowdrawpoints):
+            self.mpl_connect("button_press_event", self.on_press)
+
+
+    def on_press(self, event):
+        if(len(offset_points)<2):
+            self.axes.plot(event.xdata, event.ydata, 'co')
+            self.draw()
+            offset_points.append([event.xdata,event.ydata])
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -38,11 +50,14 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
 
-        uic.loadUi(
-            r'Final.ui', self)
+        uic.loadUi(r'GUI.ui', self)
 
         self.openFile.clicked.connect(lambda: self.read_data())
-        
+        self.start.clicked.connect(lambda: self.startcalc())
+        self.truebox.stateChanged.connect(lambda: self.drawCheck())
+        self.initbox.stateChanged.connect(lambda: self.drawCheck())
+        self.predbox.stateChanged.connect(lambda: self.drawCheck())
+
         # Global variables
         self.temp_size = 35
         self.window_size = 50
@@ -50,47 +65,62 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search_window = []
         self.position = []
         
+        self.truebox.setEnabled(False)
+        self.initbox.setEnabled(False)
+        self.predbox.setEnabled(False)
+        # self.searchbox.setEnabled(False)
+        self.start.setEnabled(False)
+
         self.graph = pg.PlotItem()
         self.graph.hideAxis('left')
         self.graph.hideAxis('bottom')
 
         # Intiating canvas
-        self.originalCanvas = MplCanvas(
-                                        self.imageView,  width=5.5, height=4.5, dpi=90)
+        self.imageView.setBackground(QtGui.QColor('#e1e1e1'))
+        self.originalCanvas = MplCanvas(True, self.imageView,  width=5.5, height=4.5, dpi=90)
         self.originalLayout = QtWidgets.QVBoxLayout()
+        self.originalCanvas.axes.axis('off')
         self.originalLayout.addWidget(self.originalCanvas)
         self.originalCanvas.draw()
 
-    def read_data(self):
-        data = pd.read_csv(
-            r"F:\materials\Fourth year\Biometrics\code\train_senior.csv")
 
-        self.test_data = pd.read_csv(
-            r"F:\materials\Fourth year\Biometrics\Code\test1_senior.csv")
+    def read_data(self):
+        data = pd.read_csv(r"..\train_senior.csv")
+
+        self.test_data = pd.read_csv(r"..\test1_senior.csv")
         
         self.names = np.array(data.iloc[:,0])
-
         self.shapes = np.array(data.iloc[:, 1:])
-
-        imagePath = QFileDialog.getOpenFileName(
+        self.imagePath = QFileDialog.getOpenFileName(
             self, "Open File", "This PC",
             "All Files (*);;PNG Files(*.png);; Jpg Files(*.jpg)")
         
-        self.test_img = cv.imread(imagePath[0], cv.IMREAD_GRAYSCALE)
-        
+        self.test_img = cv.imread(self.imagePath[0], cv.IMREAD_GRAYSCALE)
+        head, tail = ntpath.split(self.imagePath[0])
+        name =tail or ntpath.basename(head)
+        row=self.test_data.loc[self.test_data.image_path==name].values
+        self.true_positions=row[0][1:]
+
         self.moments = pd.read_csv("train_moments.csv")
         self.moments = np.asarray(self.moments)
+
+        self.originalCanvas.axes.imshow(self.test_img, cmap="gray")
+        self.imageView.setCentralItem(self.graph)
+        self.imageView.setLayout(self.originalLayout)
+        self.start.setEnabled(True)
         
-        with open('images_templates.pkl', 'rb') as f:
-            self.images_templates = pickle.load(f)
-        with open('landmark_moments.pkl', 'rb') as f:
-            self.images_templates_moments = pickle.load(f)
-        
+
+    def startcalc(self):
         self.get_similar_shapes()
         self.template_matching()
-        self.display()
+        self.accuracy()
 
+        self.truebox.setEnabled(True)
+        self.initbox.setEnabled(True)
+        self.predbox.setEnabled(True)
+        # self.searchbox.setEnabled(True)
 
+        
     def get_translation(self,shape):
         '''
         Calculates a translation for x and y
@@ -105,10 +135,8 @@ class MainWindow(QtWidgets.QMainWindow):
             translation([x,y]) a NumPy array with
             x and y translationcoordinates
         '''
-
         mean_x = np.mean(shape[::2]).astype(int)
         mean_y = np.mean(shape[1::2]).astype(int)
-
         return np.array([mean_x, mean_y])
 
 
@@ -124,6 +152,7 @@ class MainWindow(QtWidgets.QMainWindow):
         mean_x, mean_y = self.get_translation(shape)
         shape[::2] -= mean_x
         shape[1::2] -= mean_y
+
 
     def get_rotation_scale(self,reference_shape, shape):
         '''
@@ -142,7 +171,6 @@ class MainWindow(QtWidgets.QMainWindow):
             scale(float), a scaling factor
             theta(float), a rotation angle in radians
         '''
-
         a = np.dot(shape, reference_shape) / norm(reference_shape)**2
 
         #separate x and y for the sake of convenience
@@ -151,7 +179,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         x = shape[::2]
         y = shape[1::2]
-
         b = np.sum(x*ref_y - ref_x*y) / norm(reference_shape)**2
 
         scale = np.sqrt(a**2+b**2)
@@ -161,12 +188,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     def get_rotation_matrix(self,theta):
-
         return np.array([[cos(theta), -sin(theta)], [sin(theta), cos(theta)]])
 
 
     def scale(self,shape, scale):
-
         return shape / scale
 
 
@@ -226,7 +251,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     def procrustes_distance(self,reference_shape, shape):
-
         ref_x = reference_shape[::2]
         ref_y = reference_shape[1::2]
 
@@ -255,14 +279,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         #initialize a mean shape
         mean_shape = shapes[0]
-
         num_shapes = len(shapes)
 
         #create array for new shapes, add
         new_shapes = np.zeros(np.array(shapes).shape)
 
         while True:
-
             #add the mean shape as first element of array
             new_shapes[0] = mean_shape
 
@@ -272,14 +294,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 mean_y = np.mean(shapes[sh][1::2]).astype(int)
 
                 new_sh = self.procrustes_analysis(mean_shape, shapes[sh])
-                
                 new_sh[::2] += mean_x
                 new_sh[1::2] += mean_y
                 new_shapes[sh] = new_sh
 
             #calculate new mean
             new_mean = np.mean(new_shapes, axis=0)
-
             new_distance = self.procrustes_distance(new_mean, mean_shape)
 
             #if the distance did not change, break the cycle
@@ -318,71 +338,92 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mean_similar_shape, self.new_similar_shapes = self.generalized_procrustes_analysis(
             similar_shapes)
         
-           
-    def get_center_points(self):
-        self.center_points = []
-        # get x and y coordinate of each landmark in image[idx]
-        shape = self.mean_similar_shape
-        x_pos = shape[::2]
-        y_pos = shape[1::2]
-        # calculate the centers of templates for each landmark
-        c1 = [x_pos-int(0.5*self.window_size), y_pos-int(0.5*self.window_size)]
-        c2 = [x_pos-int(0.5*self.window_size), y_pos+int(0.5*self.window_size)]
-        c3 = [x_pos+int(0.5*self.window_size), y_pos-int(0.5*self.window_size)]
-        c4 = [x_pos+int(0.5*self.window_size), y_pos+int(0.5*self.window_size)]
-        self.center_points = np.concatenate((c1, c2, c3, c4))
-        self.center_points = np.asarray(self.center_points)
-        
         
     def template_matching(self):
         shapes = np.zeros(shape=(2400,1935))
-        shape = np.reshape(self.mean_similar_shape, (-1, 2)).astype(int)
+        self.mean_similar_shape = np.reshape(self.mean_similar_shape, (-1, 2)).astype(int)
+        
+        indices = [10,12,13, 15,16,17]
+        self.mean_similar_shape = np.delete(
+            self.mean_similar_shape, indices, axis=0)
+        self.true_positions = np.reshape(
+            self.true_positions, (-1, 2)).astype(int)
+        self.true_positions = np.delete(self.true_positions, indices, axis=0)
+        
+        self.edgeLandmarks = [5, 6, 7, 8, 9, 11, 12]
+        # self.edgeLandmarks=[5,6,7,8,9,12,13,14,15,16,18]
+
+        offset_x = (offset_points[0][0] - self.mean_similar_shape[7][0])
+        offset_y = (offset_points[0][1] - self.mean_similar_shape[7][1])
+        
+        for i in range(len(self.edgeLandmarks)):
+            self.mean_similar_shape[self.edgeLandmarks[i]-1][0] += offset_x
+            self.mean_similar_shape[self.edgeLandmarks[i]-1][1] += offset_y
+
+        offset_x = (offset_points[1][0] - self.mean_similar_shape[1][0])
+        offset_y = (offset_points[1][1] - self.mean_similar_shape[1][1])
+        self.edgeLandmarks=[3,2]
+
+        for i in range(len(self.edgeLandmarks)):
+            self.mean_similar_shape[self.edgeLandmarks[i]-1][0] += offset_x
+            self.mean_similar_shape[self.edgeLandmarks[i]-1][1] += offset_y
+            
         for i in self.names:
-            image = cv.imread(str('../cepha400/cepha400/'+i), cv.IMREAD_GRAYSCALE)
-            shapes += cv.equalizeHist(image)    
+            image = cv.imread(str('cepha400/'+i), cv.IMREAD_GRAYSCALE)
+            np.add(shapes,cv.equalizeHist(image),out=shapes,casting='unsafe')    
         avg_shape = shapes/ 8.0
         
         eq_test_img = cv.equalizeHist(self.test_img)
-        for i in range(19):
-            temp_land = avg_shape[shape[i][1]-self.temp_size: shape[i][1]+self.temp_size, shape[i][0]-self.temp_size:shape[i][0]+self.temp_size]
+        for i in range(len(self.mean_similar_shape)):
+            temp_land = avg_shape[self.mean_similar_shape[i][1]-self.temp_size: self.mean_similar_shape[i][1]+self.temp_size, self.mean_similar_shape[i][0]-self.temp_size:self.mean_similar_shape[i][0]+self.temp_size]
             
-            window = eq_test_img[shape[i][1]-self.window_size:shape[i][1]+self.window_size, shape[i][0] -
-                                self.window_size:shape[i][0]+self.window_size]
-            
-            res = cv.matchTemplate(
-                window, temp_land.astype(np.uint8), cv.TM_CCORR_NORMED)
+            window = eq_test_img[self.mean_similar_shape[i][1]-self.window_size:self.mean_similar_shape[i][1]+self.window_size, self.mean_similar_shape[i][0] - self.window_size:self.mean_similar_shape[i][0]+self.window_size]
+
+            res = cv.matchTemplate(window, temp_land.astype(np.uint8), cv.TM_CCORR_NORMED)
             _, _, _, max_loc = cv.minMaxLoc(res)
 
-            pos = [max_loc[0]+shape[i][0]-self.window_size+self.temp_size,
-                   max_loc[1]+shape[i][1]-self.window_size+self.temp_size]
+            pos = [max_loc[0]+self.mean_similar_shape[i][0]-self.window_size+self.temp_size,
+                   max_loc[1]+self.mean_similar_shape[i][1]-self.window_size+self.temp_size]
             self.position.append(pos)
             rect = patches.Rectangle(
-                (shape[i][0]-self.window_size, shape[i][1]-self.window_size), self.window_size*2, self.window_size*2, linewidth=1, edgecolor='r', facecolor='none')
+                (self.mean_similar_shape[i][0]-self.window_size, self.mean_similar_shape[i][1]-self.window_size), self.window_size*2, self.window_size*2, linewidth=1, edgecolor='r', facecolor='none')
             self.search_window.append(rect)
-            
-    def display(self):
-        for i in range(19):
-            self.originalCanvas.axes.add_patch(self.search_window[i])
-            self.originalCanvas.axes.scatter(self.position[i][0],
-                                         self.position[i][1], marker='*', color="red", s=30)
+
+
+    def drawCheck(self):
+        self.originalCanvas.axes.clear()
+        self.originalCanvas.axes.axis('off')
         self.originalCanvas.axes.imshow(self.test_img, cmap="gray")
-
-        # test_shape = np.array(self.test_data.iloc[1, 1:])
-        # test_shape = np.reshape(test_shape, (-1, 2))
-        # self.originalCanvas.axes.scatter(test_shape[:, 0],
-        #                                  test_shape[:, 1], marker="*", color="green", s=30)
-
-        mean_similar_shape = np.reshape(self.mean_similar_shape, (-1, 2))
-        self.originalCanvas.axes.scatter(mean_similar_shape[:, 0],
-                                         mean_similar_shape[:, 1], marker='*', color='blue', s=30)
+        for i in range(int(len(self.mean_similar_shape))):
+            if (self.truebox.isChecked()):
+                self.originalCanvas.axes.text(self.true_positions[i,0], self.true_positions[i,1], color='green', s=str(i), fontweight='bold', fontsize='medium')
+            if (self.initbox.isChecked()):
+                self.originalCanvas.axes.text(self.mean_similar_shape[i,0], self.mean_similar_shape[i,1], color='red', s=str(i), fontweight='light', fontsize='medium')
+                self.originalCanvas.axes.add_patch(self.search_window[i])
+            if (self.predbox.isChecked()):
+                self.originalCanvas.axes.text(self.position[i][0], self.position[i][1], color='blue', s=str(i), fontweight='demi', fontsize='medium')
+                # self.originalCanvas.axes.add_patch(self.search_window[i])
+            # if (self.searchbox.isChecked()):
+            #     self.originalCanvas.axes.text(self.mean_similar_shape[i,0], self.mean_similar_shape[i,1], s='')
+            #     self.originalCanvas.axes.add_patch(self.search_window[i])
         self.originalCanvas.draw()
-
         self.imageView.setCentralItem(self.graph)
         self.imageView.setLayout(self.originalLayout)
 
-    
-   
-        
+
+    def accuracy(self):
+        pmr=0.27
+        dist=[]
+        for i in range(len(self.mean_similar_shape)):
+            x = (self.position[i][0] - self.true_positions[i,0])
+            y = (self.position[i][1] - self.true_positions[i,1])
+            dist.append(np.sqrt((x**2) + (y**2)) * pmr)
+
+        self.minLabel.setText(str(round(np.min(dist), 2)))
+        self.maxLabel.setText(str(round(np.max(dist), 2)))
+        self.avgLabel.setText(str(round(np.average(dist), 2)))
+
+
 def main():
     app = QtWidgets.QApplication(sys.argv)
     main = MainWindow()
